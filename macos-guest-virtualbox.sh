@@ -4,12 +4,12 @@
 # url: https://github.com/myspaghetti/macos-virtualbox
 # version 0.99.1.5
 
-#       Dependencies: bash  coreutils  gzip  unzip  wget  xxd  dmg2img
+#       Dependencies: bash  coreutils  gzip  unzip  axel  xxd  dmg2img
 #  Optional features: tesseract-ocr  tesseract-ocr-eng
 # Supported versions:
 #               VirtualBox >= 6.1.6     dmg2img >= 1.6.5
 #               GNU bash >= 4.3         GNU coreutils >= 8.22
-#               GNU gzip >= 1.5         GNU wget >= 1.14
+#               GNU gzip >= 1.5         GNU axel >= 2.17.10
 #               Info-ZIP unzip >= 6.0   xxd with -e little endian support
 #               tesseract-ocr >= 4
 
@@ -225,20 +225,20 @@ if [[ -n "$(sw_vers 2>/dev/null)" ]]; then
         echo -e "\nmacOS detected.\nPlease use a package manager such as ${highlight_color}homebrew${default_color}, ${highlight_color}pkgsrc${default_color}, ${highlight_color}nix${default_color}, or ${highlight_color}MacPorts${default_color}"
         echo "Please make sure the following packages are installed and that"
         echo "their path is in the PATH variable:"
-        echo -e "    ${highlight_color}bash  coreutils  dmg2img  gzip  unzip  wget  xxd${default_color}"
+        echo -e "    ${highlight_color}bash  coreutils  dmg2img  gzip  unzip  axel  xxd${default_color}"
         echo "Please make sure Bash and coreutils are the GNU variant."
         exit
     fi
 fi
 
-# check for gzip, unzip, coreutils, wget
+# check for gzip, unzip, coreutils, axel
 if [[ -z "$(gzip --help 2>/dev/null)" ||
       -z "$(unzip -hh 2>/dev/null)" ||
       -z "$(csplit --help 2>/dev/null)" ||
-      -z "$(wget --version 2>/dev/null)" ]]; then
+      -z "$(axel --version 2>/dev/null)" ]]; then
     echo "Please make sure the following packages are installed"
     echo -e "and that they are of the version specified or newer:\n"
-    echo "    coreutils 8.22   wget 1.14   gzip 1.5   unzip 6.0"
+    echo "    coreutils 8.22   axel 2.17.10   gzip 1.5   unzip 6.0"
     echo -e "\nPlease make sure the coreutils and gzip packages are the GNU variant."
     exit
 fi
@@ -251,13 +251,8 @@ if [[ -z "$(xxd -e -p -l 16 /dev/urandom 2>/dev/null)" ]]; then
     exit
 fi
 
-# wget supports --show-progress from version 1.16
-regex='1\.1[6-9]|1\.[2-9][0-9]'  # for zsh quoted regex compatibility
-if [[ "$(wget --version 2>/dev/null | head -n 1)" =~ ${regex} ]]; then
-    wgetargs="--quiet --continue --show-progress --timeout=60"  # pretty
-else
-    wgetargs="--continue"  # ugly
-fi
+# axel number of connections
+axelargs="-n 8"
 
 # VirtualBox in ${PATH}
 # Cygwin
@@ -371,9 +366,9 @@ if ! dmg2img >/dev/null 2>&1; then
     if [[ -z "$("${PWD%%/}/dmg2img.exe" -d 2>/dev/null)" ]]; then
         if [[ -z "${PWD}" ]]; then echo "PWD environment variable is not set. Exiting."; exit; fi
         echo "Locally installing dmg2img"
-        wget "http://vu1tur.eu.org/tools/dmg2img-1.6.6-win32.zip" \
-             ${wgetargs} \
-             --output-document="dmg2img-1.6.6-win32.zip"
+        axel "http://vu1tur.eu.org/tools/dmg2img-1.6.6-win32.zip" \
+             ${axelargs} \
+             -o "dmg2img-1.6.6-win32.zip"
         if [[ ! -s dmg2img-1.6.6-win32.zip ]]; then
              echo "Error downloading dmg2img. Please provide the package manually."
              exit
@@ -479,19 +474,13 @@ function prepare_macos_installation_files() {
 print_dimly "stage: prepare_macos_installation_files"
 # Find the correct download URL in the Apple catalog
 echo -e "\nDownloading Apple macOS ${macOS_release_name} software update catalog"
-wget "${sucatalog}" \
-     ${wgetargs} \
-     --output-document="${macOS_release_name}_sucatalog"
+axel "${sucatalog}" \
+     ${axelargs} \
+     -o "${macOS_release_name}_sucatalog"
 
 # if file was not downloaded correctly
 if [[ ! -s "${macOS_release_name}_sucatalog" ]]; then
-    wget --debug --timeout=60 -O /dev/null -o "${macOS_release_name}_wget.log" "${sucatalog}"
     echo -e "\nCouldn't download the Apple software update catalog."
-    if [[ "$(expr match "$(cat "${macOS_release_name}_wget.log")" '.*ERROR[[:print:]]*is not trusted')" -gt "0" ]]; then
-        echo -e "\nMake sure certificates from a certificate authority are installed."
-        echo "Certificates are often installed through the package manager with"
-        echo "a package named  ${highlight_color}ca-certificates${default_color}"
-    fi
     echo "Exiting."
     exit
 fi
@@ -506,9 +495,9 @@ for catalog in "${macOS_release_name}_sucatalog_"* "error"; do
     fi
     urlbase="$(tail -n 1 "${catalog}" 2>/dev/null)"
     urlbase="$(expr match "${urlbase}" '.*\(http://[^<]*/\)')"
-    wget "${urlbase}InstallAssistantAuto.smd" \
-    ${wgetargs} \
-    --output-document="${catalog}_InstallAssistantAuto.smd"
+    axel "${urlbase}InstallAssistantAuto.smd" \
+    ${axelargs} \
+    -o "${catalog}_InstallAssistantAuto.smd"
     if [[ "$(cat "${catalog}_InstallAssistantAuto.smd" )" =~ Beta ]]; then
         continue
     fi
@@ -526,9 +515,9 @@ for filename in "BaseSystem.chunklist" \
                 "AppleDiagnostics.chunklist" \
                 "BaseSystem.dmg" \
                 "InstallESDDmg.pkg"; \
-    do wget "${urlbase}${filename}" \
-            ${wgetargs} \
-            --output-document "${macOS_release_name}_${filename}"
+    do axel "${urlbase}${filename}" \
+            ${axelargs} \
+            -o "${macOS_release_name}_${filename}"
 done
 
 echo -e "\nSplitting the several-GB InstallESDDmg.pkg into 1GB parts because"
@@ -539,9 +528,9 @@ split --verbose -a 2 -d -b 1000000000 "${macOS_release_name}_InstallESDDmg.pkg" 
 if [[ ! -s "ApfsDriverLoader.efi" ]]; then
     echo -e "\nDownloading open-source APFS EFI drivers used for VirtualBox 6.0 and 5.2"
     [[ "${vbox_version:0:1}" -gt 6 || ( "${vbox_version:0:1}" = 6 && "${vbox_version:2:1}" -ge 1 ) ]] && echo "...even though VirtualBox version 6.1 or higher is detected."
-    wget 'https://github.com/acidanthera/AppleSupportPkg/releases/download/2.0.4/AppleSupport-v2.0.4-RELEASE.zip' \
-        ${wgetargs} \
-        --output-document 'AppleSupport-v2.0.4-RELEASE.zip'
+    axel 'https://github.com/acidanthera/AppleSupportPkg/releases/download/2.0.4/AppleSupport-v2.0.4-RELEASE.zip' \
+        ${axelargs} \
+        -o 'AppleSupport-v2.0.4-RELEASE.zip'
         unzip -oj 'AppleSupport-v2.0.4-RELEASE.zip'
 fi
 }
